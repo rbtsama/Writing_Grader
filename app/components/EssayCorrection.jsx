@@ -584,10 +584,11 @@ const EssayCorrection = () => {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid grid-cols-3 mb-4">
+        <TabsList className="grid grid-cols-4 mb-4">
           <TabsTrigger value="upload">上传作文</TabsTrigger>
           <TabsTrigger value="results">批改结果</TabsTrigger>
-          <TabsTrigger value="settings">学生名单</TabsTrigger>
+          <TabsTrigger value="students">学生名单</TabsTrigger>
+          <TabsTrigger value="settings">系统设置</TabsTrigger>
         </TabsList>
         
         <TabsContent value="upload" className="space-y-4">
@@ -639,7 +640,7 @@ const EssayCorrection = () => {
             )}
             
             <h2 className="text-lg font-semibold mb-2">上传作文图片</h2>
-            <div className="flex items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-6 mb-4">
+            <div className="flex items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-6 mb-6">
               <label className="flex flex-col items-center cursor-pointer">
                 {!imagePreview ? (
                   <>
@@ -658,20 +659,19 @@ const EssayCorrection = () => {
               </label>
             </div>
             
-            <div className="flex justify-between mb-4">
+            <div className="flex justify-between gap-4 sticky bottom-0 pt-2 bg-white">
+              <Button variant="outline" onClick={handleClear} className="w-1/3">
+                清除
+              </Button>
               <Button 
                 onClick={handleCorrection} 
-                className="w-full" 
+                className="w-2/3" 
                 disabled={!selectedImage || !selectedStudent || loading}
               >
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 开始批改
               </Button>
             </div>
-            
-            <Button variant="outline" onClick={handleClear} className="w-full">
-              清除
-            </Button>
           </Card>
         </TabsContent>
         
@@ -763,7 +763,7 @@ const EssayCorrection = () => {
           </Card>
         </TabsContent>
         
-        <TabsContent value="settings">
+        <TabsContent value="students">
           <Card className="p-4">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-semibold">学生名单设置</h2>
@@ -810,6 +810,57 @@ const EssayCorrection = () => {
               }
               className="min-h-[500px]"
             />
+          </Card>
+        </TabsContent>
+        
+        <TabsContent value="settings">
+          <Card className="p-4">
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold mb-4">系统设置</h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2" htmlFor="apiKey">
+                    OpenRouter API密钥
+                  </label>
+                  <div className="flex space-x-2">
+                    <Input
+                      id="apiKey"
+                      type="password"
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder="输入OpenRouter API密钥"
+                      className="flex-grow"
+                    />
+                    <Button onClick={() => {
+                      localStorage.setItem('openrouterApiKey', apiKey);
+                      showToast('API密钥已保存', 'success');
+                    }}>
+                      保存
+                    </Button>
+                  </div>
+                  <p className="mt-2 text-sm text-gray-500">
+                    请在<a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">OpenRouter网站</a>注册并创建API密钥
+                  </p>
+                </div>
+                
+                <Alert className="bg-blue-50 border-blue-200">
+                  <AlertTitle className="text-blue-800">关于API密钥</AlertTitle>
+                  <AlertDescription className="text-blue-700">
+                    API密钥用于连接OpenRouter服务，进行作文批改。密钥仅保存在您的浏览器中，不会发送至其他服务器。
+                  </AlertDescription>
+                </Alert>
+                
+                <div className="mt-8">
+                  <h3 className="font-medium mb-2">系统信息</h3>
+                  <div className="bg-gray-50 p-3 rounded text-sm text-gray-600">
+                    <p>版本: 1.0.0</p>
+                    <p>最近更新: 2024年4月</p>
+                    <p>© 2024 Luna Writing Grader. All rights reserved.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </Card>
         </TabsContent>
       </Tabs>
