@@ -36,6 +36,95 @@ const EssayCorrection = () => {
   const [previewImage, setPreviewImage] = useState(null);
   const [showImagePreview, setShowImagePreview] = useState(false);
   
+  // 初始化数据
+  const initialData = {
+    apiKey: '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',
+    class18List: `陈嘉熙
+黄梓炫
+龙夏文轩
+孙志昊
+徐怿舟
+杨熹霖
+张鑫洛
+蔡佳儒
+陈卓然
+杜与寻
+冯麓嘉
+黄紫芸
+蒋睿熙
+刘馨瑷
+马小蔚
+马伊婷
+王雅萱
+王籽壹
+徐闻祺
+杨茗尧`,
+    class19List: `马誉林
+王啸坤
+曾婧媛
+陈诺
+丁怡帆
+黄伊凡
+李文煦
+刘晨珺
+刘丽莎
+卢芷琪
+谭思扬
+王星懿
+谢倚婷
+颜若琳
+姚鑫宸
+张宇涵`
+  };
+
+  // 验证API密钥
+  const validateApiKey = async (key) => {
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${key}`,
+          'HTTP-Referer': window.location.href,
+          'X-Title': 'Luna Writing Grader'
+        },
+        body: JSON.stringify({
+          model: 'deepseek/deepseek-r1:free',
+          messages: [{ role: 'user', content: 'test' }]
+        })
+      });
+      
+      return response.ok;
+    } catch (error) {
+      console.error('API密钥验证失败:', error);
+      return false;
+    }
+  };
+
+  // 保存API密钥
+  const handleSaveApiKey = async () => {
+    if (!apiKey) {
+      showToast('请输入API密钥', 'error');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const isValid = await validateApiKey(apiKey);
+      
+      if (isValid) {
+        localStorage.setItem('openrouterApiKey', apiKey);
+        showToast('API密钥验证成功并已保存', 'success');
+      } else {
+        showToast('API密钥验证失败，请检查密钥是否正确', 'error');
+      }
+    } catch (error) {
+      showToast('API密钥验证失败，请检查网络连接', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // 加载历史记录和学生名单
   useEffect(() => {
     const savedHistory = localStorage.getItem('correctionHistory');
@@ -48,7 +137,6 @@ const EssayCorrection = () => {
       try {
         const parsedHistory = JSON.parse(savedHistory);
         setHistory(parsedHistory);
-        // 默认选中最新的一条记录
         if (parsedHistory.length > 0) {
           setSelectedResultId(parsedHistory[0].id);
         }
@@ -58,11 +146,18 @@ const EssayCorrection = () => {
       }
     }
     
-    if (savedClass18List) {
+    // 如果没有保存的学生名单，使用初始化数据
+    if (!savedClass18List) {
+      setClass18List(initialData.class18List);
+      localStorage.setItem('class18List', initialData.class18List);
+    } else {
       setClass18List(savedClass18List);
     }
     
-    if (savedClass19List) {
+    if (!savedClass19List) {
+      setClass19List(initialData.class19List);
+      localStorage.setItem('class19List', initialData.class19List);
+    } else {
       setClass19List(savedClass19List);
     }
     
@@ -70,11 +165,12 @@ const EssayCorrection = () => {
       setSelectedClass(savedSelectedClass);
     }
     
-    if (savedApiKey) {
-      setApiKey(savedApiKey);
+    // 如果没有保存的API密钥，使用初始化数据
+    if (!savedApiKey) {
+      setApiKey(initialData.apiKey);
+      localStorage.setItem('openrouterApiKey', initialData.apiKey);
     } else {
-      // 如果没有保存的API密钥，使用默认提供的密钥并保存到localStorage
-      localStorage.setItem('openrouterApiKey', apiKey);
+      setApiKey(savedApiKey);
     }
   }, []);
   
@@ -188,13 +284,16 @@ const EssayCorrection = () => {
     }
     
     if (!apiKey) {
-      showToast('API密钥未设置', 'error');
+      showToast('API密钥未设置，请在系统设置中配置', 'error');
       return;
     }
     
     setLoading(true);
     
     try {
+      // 显示开始批改的提示
+      showToast('开始批改...', 'info');
+      
       // 将图片转换为base64格式
       const imageBase64 = imagePreview.split(',')[1]; // 移除data:image/jpeg;base64,前缀
       
@@ -257,66 +356,98 @@ const EssayCorrection = () => {
 
 请根据上传的作文图片内容进行批改。`;
 
-      // 显示开始批改的提示
-      showToast('开始批改...', 'info');
-
-      try {
-        // 调用OpenRouter API
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`
+      // 构建请求数据
+      const requestData = {
+        model: 'deepseek/deepseek-r1:free',
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt
           },
-          body: JSON.stringify({
-            model: 'deepseek/deepseek-r1:free',
-            messages: [
+          {
+            role: 'user',
+            content: [
               {
-                role: 'system',
-                content: systemPrompt
+                type: 'text',
+                text: userPrompt
               },
               {
-                role: 'user',
-                content: [
-                  {
-                    type: 'text',
-                    text: userPrompt
-                  },
-                  {
-                    type: 'image_url',
-                    image_url: {
-                      url: `data:image/jpeg;base64,${imageBase64}`
-                    }
-                  }
-                ]
+                type: 'image_url',
+                image_url: {
+                  url: `data:image/jpeg;base64,${imageBase64}`
+                }
               }
             ]
-          })
-        });
+          }
+        ]
+      };
+      
+      // 设置请求超时时间 (60秒)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000);
+      
+      // 调用OpenRouter API
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': window.location.href,
+          'X-Title': 'Luna Writing Grader'
+        },
+        body: JSON.stringify(requestData),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      console.log('API响应状态:', response.status);
+      console.log('使用的API密钥:', apiKey ? `${apiKey.substring(0, 10)}...` : '未设置');
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('API错误响应:', errorText);
         
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error?.message || '批改请求失败');
+        let errorMessage = '批改请求失败';
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.error?.message || '批改请求失败';
+        } catch (e) {
+          errorMessage = `批改请求失败 (${response.status})`;
         }
         
-        const data = await response.json();
-        const result = data.choices[0].message.content;
-        
-        saveToHistory(selectedStudent, result, imagePreview);
-        setSelectedImage(null);
-        setImagePreview('');
-        
-        // 显示批改成功提示
-        showToast('批改完成', 'success');
-      } catch (error) {
-        console.error('错误:', error);
-        showToast(`批改失败，请再次尝试: ${error.message}`, 'error');
-      } finally {
-        setLoading(false);
+        throw new Error(errorMessage);
       }
+      
+      const data = await response.json();
+      console.log('API成功响应:', data);
+      
+      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+        throw new Error('API返回格式错误，未找到结果内容');
+      }
+      
+      const result = data.choices[0].message.content;
+      
+      saveToHistory(selectedStudent, result, imagePreview);
+      setSelectedImage(null);
+      setImagePreview('');
+      setSelectedStudent('');
+      
+      // 显示批改成功提示
+      showToast('批改完成', 'success');
+      
+      // 自动切换到结果标签页
+      setActiveTab('results');
+      
     } catch (error) {
-      console.error('错误:', error);
-      showToast('批改过程出错，请重试', 'error');
+      console.error('批改错误:', error);
+      
+      if (error.name === 'AbortError') {
+        showToast('批改请求超时，请检查网络连接或稍后再试', 'error');
+      } else {
+        showToast(`批改失败: ${error.message}`, 'error');
+      }
+    } finally {
       setLoading(false);
     }
   };
@@ -832,10 +963,7 @@ const EssayCorrection = () => {
                       placeholder="输入OpenRouter API密钥"
                       className="flex-grow"
                     />
-                    <Button onClick={() => {
-                      localStorage.setItem('openrouterApiKey', apiKey);
-                      showToast('API密钥已保存', 'success');
-                    }}>
+                    <Button onClick={handleSaveApiKey}>
                       保存
                     </Button>
                   </div>
