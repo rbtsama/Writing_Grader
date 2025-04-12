@@ -29,7 +29,7 @@ const EssayCorrection = () => {
   const [students, setStudents] = useState([]);
   
   const [selectedResultId, setSelectedResultId] = useState(null);
-  const [apiKey, setApiKey] = useState('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');
+  const [apiKey, setApiKey] = useState('');
   const { showToast } = useToast();
   
   // 图片预览状态
@@ -38,7 +38,7 @@ const EssayCorrection = () => {
   
   // 初始化数据
   const initialData = {
-    apiKey: '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',
+    apiKey: 'sk-ezyttcnxzkeixmghbfwujlmlwupseddmuzigtkyivxeionse', // 设置为提供的新密钥
     class18List: `陈嘉熙
 黄梓炫
 龙夏文轩
@@ -80,16 +80,14 @@ const EssayCorrection = () => {
   // 验证API密钥
   const validateApiKey = async (key) => {
     try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      const response = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${key}`,
-          'HTTP-Referer': window.location.href,
-          'X-Title': 'Luna Writing Grader'
+          'Authorization': `Bearer ${key}`
         },
         body: JSON.stringify({
-          model: 'deepseek/deepseek-r1:free',
+          model: 'deepseek-ai/DeepSeek-R1',
           messages: [{ role: 'user', content: 'test' }]
         })
       });
@@ -113,7 +111,7 @@ const EssayCorrection = () => {
       const isValid = await validateApiKey(apiKey);
       
       if (isValid) {
-        localStorage.setItem('openrouterApiKey', apiKey);
+        localStorage.setItem('siliconflowApiKey', apiKey);
         showToast('API密钥验证成功并已保存', 'success');
       } else {
         showToast('API密钥验证失败，请检查密钥是否正确', 'error');
@@ -131,7 +129,7 @@ const EssayCorrection = () => {
     const savedClass18List = localStorage.getItem('class18List');
     const savedClass19List = localStorage.getItem('class19List');
     const savedSelectedClass = localStorage.getItem('selectedClass');
-    const savedApiKey = localStorage.getItem('openrouterApiKey');
+    const savedApiKey = localStorage.getItem('siliconflowApiKey'); // 更改为新的key名称
     
     if (savedHistory) {
       try {
@@ -165,11 +163,8 @@ const EssayCorrection = () => {
       setSelectedClass(savedSelectedClass);
     }
     
-    // 如果没有保存的API密钥，使用初始化数据
-    if (!savedApiKey) {
-      setApiKey(initialData.apiKey);
-      localStorage.setItem('openrouterApiKey', initialData.apiKey);
-    } else {
+    // 加载API密钥
+    if (savedApiKey) {
       setApiKey(savedApiKey);
     }
   }, []);
@@ -284,7 +279,7 @@ const EssayCorrection = () => {
     }
     
     if (!apiKey) {
-      showToast('API密钥未设置，请在系统设置中配置', 'error');
+      showToast('API密钥未设置，请在系统设置中配置SiliconFlow API密钥', 'error');
       return;
     }
     
@@ -332,9 +327,7 @@ const EssayCorrection = () => {
 
 ## 特殊约束
 1. 评分严格参照维度：  
- - 内容（比如，1.你是如何开始摄影的；
-2.你爱上摄影的原因；
-3.摄影带给你的收获。是否题目要求的内容有缺失？爱上摄影的原因是否过少或者有重复？）
+ - 内容
  - 主题句/标志词 
  - 逻辑流畅度（逻辑具有连贯性）
  - 词句表达
@@ -358,7 +351,7 @@ const EssayCorrection = () => {
 
       // 构建请求数据
       const requestData = {
-        model: 'deepseek/deepseek-r1:free',
+        model: 'deepseek-ai/DeepSeek-R1',
         messages: [
           {
             role: 'system',
@@ -386,14 +379,12 @@ const EssayCorrection = () => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000);
       
-      // 调用OpenRouter API
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      // 调用API
+      const response = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': window.location.href,
-          'X-Title': 'Luna Writing Grader'
+          'Authorization': `Bearer ${apiKey}`
         },
         body: JSON.stringify(requestData),
         signal: controller.signal
@@ -952,7 +943,7 @@ const EssayCorrection = () => {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-2" htmlFor="apiKey">
-                    OpenRouter API密钥
+                    SiliconFlow API密钥
                   </label>
                   <div className="flex space-x-2">
                     <Input
@@ -960,7 +951,7 @@ const EssayCorrection = () => {
                       type="password"
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
-                      placeholder="输入OpenRouter API密钥"
+                      placeholder="输入SiliconFlow API密钥"
                       className="flex-grow"
                     />
                     <Button onClick={handleSaveApiKey}>
@@ -968,14 +959,14 @@ const EssayCorrection = () => {
                     </Button>
                   </div>
                   <p className="mt-2 text-sm text-gray-500">
-                    请在<a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">OpenRouter网站</a>注册并创建API密钥
+                    请在<a href="https://siliconflow.cn/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">SiliconFlow网站</a>注册并创建API密钥
                   </p>
                 </div>
                 
                 <Alert className="bg-blue-50 border-blue-200">
                   <AlertTitle className="text-blue-800">关于API密钥</AlertTitle>
                   <AlertDescription className="text-blue-700">
-                    API密钥用于连接OpenRouter服务，进行作文批改。密钥仅保存在您的浏览器中，不会发送至其他服务器。
+                    API密钥用于连接SiliconFlow服务，访问deepseek-ai/DeepSeek-R1模型进行作文批改。密钥仅保存在您的浏览器中，不会发送至其他服务器。
                   </AlertDescription>
                 </Alert>
                 
