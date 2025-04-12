@@ -48,7 +48,7 @@ const EssayCorrection = () => {
   
   // 初始化数据
   const initialData = {
-    apiKey: 'sk-ezyttcnxzkeixmghbfwujlmlwupseddmuzigtkyivxeionse', // 设置为提供的新密钥
+    apiKey: 'sk-ezyttcnxzkeixmghbfwujlmlwupseddmuzigtkyivxeionse', // 更新密钥
     class18List: `陈嘉熙
 黄梓炫
 龙夏文轩
@@ -90,6 +90,8 @@ const EssayCorrection = () => {
   // 验证API密钥
   const validateApiKey = async (key) => {
     try {
+      console.log('验证API密钥:', key.substring(0, 10) + '...');
+      
       const response = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -102,9 +104,35 @@ const EssayCorrection = () => {
         })
       });
       
-      return response.ok;
+      console.log('API验证响应状态:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('API验证错误响应:', errorText);
+        
+        if (response.status === 401) {
+          console.error('密钥验证失败: 认证失败');
+        } else if (response.status === 404) {
+          console.error('密钥验证失败: API端点不存在');
+        } else {
+          console.error(`密钥验证失败: HTTP ${response.status}`);
+        }
+        
+        return false;
+      }
+      
+      // 尝试获取响应数据
+      try {
+        const data = await response.json();
+        console.log('API验证成功, 模型:', data.model);
+        console.log('响应类型:', typeof data.choices[0].message.content);
+        return true;
+      } catch (parseError) {
+        console.error('解析API响应失败:', parseError);
+        return false;
+      }
     } catch (error) {
-      console.error('API密钥验证失败:', error);
+      console.error('API验证请求失败:', error);
       return false;
     }
   };
@@ -951,6 +979,89 @@ const EssayCorrection = () => {
     }
   };
 
+  // 测试API连接
+  const testApiConnection = async () => {
+    if (!apiKey) {
+      showToast('请先输入API密钥', 'error');
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      showToast('正在测试API连接...', 'info');
+      
+      // 调用API进行简单测试
+      const response = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: 'deepseek-ai/DeepSeek-R1',
+          messages: [
+            {
+              role: 'user',
+              content: '你好，这是一条测试消息。请回复"API测试成功"'
+            }
+          ]
+        })
+      });
+      
+      // 记录原始响应信息用于调试
+      console.log('API测试响应状态:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('API错误响应详情:', errorText);
+        
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (e) {
+          // 如果不是有效的JSON，使用原始文本
+        }
+        
+        if (response.status === 401) {
+          showToast('API密钥认证失败，请检查密钥是否正确', 'error');
+        } else if (response.status === 404) {
+          showToast('API端点不存在，请检查API地址', 'error');
+        } else if (response.status === 400) {
+          showToast(`请求格式错误: ${errorData?.error?.message || errorText}`, 'error');
+        } else if (response.status === 429) {
+          showToast('请求频率过高或额度已用尽', 'error');
+        } else {
+          showToast(`API测试失败 (${response.status}): ${errorData?.error?.message || errorText}`, 'error');
+        }
+        return;
+      }
+      
+      // 解析响应
+      const data = await response.json();
+      console.log('API测试成功响应:', data);
+      
+      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+        showToast('API返回的响应格式不正确', 'error');
+        return;
+      }
+      
+      const modelResponse = data.choices[0].message.content;
+      showToast(`API测试成功! 模型响应: "${modelResponse.substring(0, 30)}${modelResponse.length > 30 ? '...' : ''}"`, 'success');
+    } catch (error) {
+      console.error('API测试错误:', error);
+      
+      if (error.name === 'AbortError') {
+        showToast('API请求超时，请检查网络连接', 'error');
+      } else if (error.message.includes('NetworkError')) {
+        showToast('网络错误，请检查网络连接', 'error');
+      } else {
+        showToast(`API测试失败: ${error.message}`, 'error');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="container mx-auto p-4 max-w-6xl">
       <div className="flex items-center justify-center mb-8">
@@ -1312,13 +1423,25 @@ const EssayCorrection = () => {
                       placeholder="输入SiliconFlow API密钥"
                       className="flex-grow"
                     />
-                    <Button onClick={handleSaveApiKey}>
+                    <Button onClick={handleSaveApiKey} disabled={loading}>
                       保存
                     </Button>
                   </div>
-                  <p className="mt-2 text-sm text-gray-500">
-                    请在<a href="https://siliconflow.cn/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">SiliconFlow网站</a>注册并创建API密钥
-                  </p>
+                  <div className="flex justify-between mt-2">
+                    <p className="text-sm text-gray-500">
+                      请在<a href="https://siliconflow.cn/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">SiliconFlow网站</a>注册并创建API密钥
+                    </p>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={testApiConnection}
+                      disabled={loading || !apiKey}
+                      className="ml-2"
+                    >
+                      {loading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                      测试连接
+                    </Button>
+                  </div>
                 </div>
                 
                 <Alert className="bg-blue-50 border-blue-200">
