@@ -42,6 +42,10 @@ const EssayCorrection = () => {
   const [syncEnabled, setSyncEnabled] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
   
+  // 添加批改队列状态
+  const [correctionQueue, setCorrectionQueue] = useState([]);
+  const [isProcessingQueue, setIsProcessingQueue] = useState(false);
+  
   // 初始化数据
   const initialData = {
     apiKey: 'sk-ezyttcnxzkeixmghbfwujlmlwupseddmuzigtkyivxeionse', // 设置为提供的新密钥
@@ -272,31 +276,125 @@ const EssayCorrection = () => {
     setSelectedStudent(name);
   };
   
-  // 调用AI批改
-  const handleCorrection = async () => {
+  // 添加作业到队列
+  const addToQueue = () => {
     if (!selectedStudent) {
       showToast('请选择学生', 'error');
-      return;
+      return false;
     }
     
     if (!selectedImage) {
       showToast('请先上传作文图片', 'error');
-      return;
+      return false;
     }
     
     if (!apiKey) {
       showToast('API密钥未设置，请在系统设置中配置SiliconFlow API密钥', 'error');
-      return;
+      return false;
+    }
+
+    // 创建队列项
+    const queueItem = {
+      id: Date.now(),
+      student: selectedStudent,
+      image: selectedImage,
+      imagePreview: imagePreview,
+      class: selectedClass,
+      status: 'pending' // pending, processing, completed, failed
+    };
+    
+    // 添加到队列
+    setCorrectionQueue(prev => [...prev, queueItem]);
+    
+    // 清除当前选择
+    setSelectedStudent('');
+    setSelectedImage(null);
+    setImagePreview('');
+    
+    showToast(`已将 ${selectedStudent} 的作文添加到批改队列`, 'success');
+    
+    // 如果队列处理未开始，启动队列处理
+    if (!isProcessingQueue) {
+      processQueue();
     }
     
-    setLoading(true);
+    return true;
+  };
+
+  // 处理队列
+  const processQueue = async () => {
+    if (isProcessingQueue) return;
+    
+    setIsProcessingQueue(true);
     
     try {
-      // 显示开始批改的提示
-      showToast('开始批改...', 'info');
+      while (correctionQueue.length > 0) {
+        // 获取队列中第一个待处理项
+        const nextItem = correctionQueue.find(item => item.status === 'pending');
+        if (!nextItem) break;
+        
+        // 更新状态为处理中
+        setCorrectionQueue(prev => 
+          prev.map(item => 
+            item.id === nextItem.id 
+              ? { ...item, status: 'processing' } 
+              : item
+          )
+        );
+        
+        // 处理批改
+        try {
+          await processCorrectionItem(nextItem);
+          
+          // 更新状态为已完成
+          setCorrectionQueue(prev => 
+            prev.map(item => 
+              item.id === nextItem.id 
+                ? { ...item, status: 'completed' } 
+                : item
+            )
+          );
+        } catch (error) {
+          console.error('处理队列项失败:', error);
+          
+          // 更新状态为失败
+          setCorrectionQueue(prev => 
+            prev.map(item => 
+              item.id === nextItem.id 
+                ? { ...item, status: 'failed', error: error.message } 
+                : item
+            )
+          );
+        }
+      }
+    } finally {
+      setIsProcessingQueue(false);
       
+      // 清理已完成的项目
+      setTimeout(() => {
+        setCorrectionQueue(prev => 
+          prev.filter(item => item.status !== 'completed')
+        );
+      }, 5000);
+    }
+  };
+
+  // 添加一个useEffect来监听队列变化并自动处理
+  useEffect(() => {
+    // 当队列中有待处理项且当前没有正在处理的项时，启动处理
+    const hasPendingItems = correctionQueue.some(item => item.status === 'pending');
+    if (hasPendingItems && !isProcessingQueue) {
+      processQueue();
+    }
+  }, [correctionQueue, isProcessingQueue]);
+
+  // 修改processCorrectionItem函数，添加通知
+  const processCorrectionItem = async (item) => {
+    setLoading(true); // 显示全局加载状态
+    
+    try {
       // 将图片转换为base64格式
-      const imageBase64 = imagePreview.split(',')[1]; // 移除data:image/jpeg;base64,前缀
+      const imageBase64 = item.imagePreview.split(',')[1];
       
       // 构建prompt
       const systemPrompt = `# 优化后英语作文批改智能体Prompt
@@ -350,7 +448,7 @@ const EssayCorrection = () => {
  - 内容完整性
  - 逻辑流畅度`;
 
-      const userPrompt = `学生姓名：${selectedStudent}
+      const userPrompt = `学生姓名：${item.student}
 作文照片：[图片已上传]
 
 请根据上传的作文图片内容进行批改。`;
@@ -398,9 +496,6 @@ const EssayCorrection = () => {
       
       clearTimeout(timeoutId);
       
-      console.log('API响应状态:', response.status);
-      console.log('使用的API密钥:', apiKey ? `${apiKey.substring(0, 10)}...` : '未设置');
-      
       if (!response.ok) {
         const errorText = await response.text();
         console.error('API错误响应:', errorText);
@@ -417,7 +512,6 @@ const EssayCorrection = () => {
       }
       
       const data = await response.json();
-      console.log('API成功响应:', data);
       
       if (!data.choices || !data.choices[0] || !data.choices[0].message) {
         throw new Error('API返回格式错误，未找到结果内容');
@@ -425,27 +519,32 @@ const EssayCorrection = () => {
       
       const result = data.choices[0].message.content;
       
-      saveToHistory(selectedStudent, result, imagePreview);
-      setSelectedImage(null);
-      setImagePreview('');
-      setSelectedStudent('');
+      // 保存到历史记录
+      saveToHistory(item.student, result, item.imagePreview);
       
-      // 显示批改成功提示
-      showToast('批改完成', 'success');
+      // 显示批改完成通知
+      showToast(`${item.student} 的作文批改完成`, 'success');
       
-      // 自动切换到结果标签页
-      setActiveTab('results');
-      
+      return result;
     } catch (error) {
-      console.error('批改错误:', error);
-      
-      if (error.name === 'AbortError') {
-        showToast('批改请求超时，请检查网络连接或稍后再试', 'error');
-      } else {
-        showToast(`批改失败: ${error.message}`, 'error');
-      }
+      console.error('批改过程中出错:', error);
+      showToast(`${item.student} 的作文批改失败: ${error.message}`, 'error');
+      throw error;
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 移除队列项
+  const removeFromQueue = (id) => {
+    setCorrectionQueue(prev => prev.filter(item => item.id !== id));
+  };
+
+  // 修改现有的handleCorrection函数
+  const handleCorrection = () => {
+    const success = addToQueue();
+    if (success) {
+      showToast('已添加到批改队列，正在处理...', 'info');
     }
   };
   
@@ -965,9 +1064,94 @@ const EssayCorrection = () => {
                 disabled={!selectedImage || !selectedStudent || loading}
               >
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                开始批改
+                添加到批改队列
               </Button>
             </div>
+            
+            {correctionQueue.length > 0 && (
+              <div className="mt-4 border-t pt-4">
+                <h3 className="text-lg font-medium mb-3">批改队列 ({correctionQueue.length})</h3>
+                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                  {correctionQueue.map((item) => (
+                    <div 
+                      key={item.id} 
+                      className={`flex items-center justify-between p-3 rounded-lg border ${
+                        item.status === 'processing' ? 'bg-blue-50 border-blue-200' : 
+                        item.status === 'completed' ? 'bg-green-50 border-green-200' : 
+                        item.status === 'failed' ? 'bg-red-50 border-red-200' : 
+                        'bg-gray-50 border-gray-200'
+                      }`}
+                    >
+                      <div className="flex items-center">
+                        <div className="h-10 w-10 mr-3 rounded overflow-hidden flex-shrink-0">
+                          <img 
+                            src={item.imagePreview} 
+                            alt={`${item.student}的作文`} 
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+                        <div>
+                          <div className="font-medium">{item.student}</div>
+                          <div className="text-xs text-gray-500">
+                            {item.class === 'class18' ? '18班' : '19班'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center">
+                        {item.status === 'pending' && (
+                          <span className="text-sm text-gray-500 mr-2">等待中</span>
+                        )}
+                        {item.status === 'processing' && (
+                          <div className="flex items-center">
+                            <Loader2 className="animate-spin h-4 w-4 mr-1 text-blue-500" />
+                            <span className="text-sm text-blue-600">批改中</span>
+                          </div>
+                        )}
+                        {item.status === 'completed' && (
+                          <span className="text-sm text-green-600 mr-2">已完成</span>
+                        )}
+                        {item.status === 'failed' && (
+                          <span className="text-sm text-red-600 mr-2" title={item.error}>
+                            失败
+                          </span>
+                        )}
+                        
+                        {item.status !== 'processing' && (
+                          <button
+                            onClick={() => removeFromQueue(item.id)}
+                            className="p-1 rounded-full hover:bg-gray-200 transition-colors"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                
+                <div className="flex justify-between mt-3">
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={() => setCorrectionQueue([])}
+                    disabled={isProcessingQueue}
+                  >
+                    清空队列
+                  </Button>
+                  
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={() => setActiveTab('results')}
+                    className="text-blue-600 hover:text-blue-700"
+                  >
+                    查看结果
+                  </Button>
+                </div>
+              </div>
+            )}
           </Card>
         </TabsContent>
         
