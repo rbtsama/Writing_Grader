@@ -36,6 +36,12 @@ const EssayCorrection = () => {
   const [previewImage, setPreviewImage] = useState(null);
   const [showImagePreview, setShowImagePreview] = useState(false);
   
+  // 添加GitHub Gist token相关状态
+  const [gistToken, setGistToken] = useState('');
+  const [gistId, setGistId] = useState('');
+  const [syncEnabled, setSyncEnabled] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
+  
   // 初始化数据
   const initialData = {
     apiKey: 'sk-ezyttcnxzkeixmghbfwujlmlwupseddmuzigtkyivxeionse', // 设置为提供的新密钥
@@ -99,30 +105,6 @@ const EssayCorrection = () => {
     }
   };
 
-  // 保存API密钥
-  const handleSaveApiKey = async () => {
-    if (!apiKey) {
-      showToast('请输入API密钥', 'error');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const isValid = await validateApiKey(apiKey);
-      
-      if (isValid) {
-        localStorage.setItem('siliconflowApiKey', apiKey);
-        showToast('API密钥验证成功并已保存', 'success');
-      } else {
-        showToast('API密钥验证失败，请检查密钥是否正确', 'error');
-      }
-    } catch (error) {
-      showToast('API密钥验证失败，请检查网络连接', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // 加载历史记录和学生名单
   useEffect(() => {
     const savedHistory = localStorage.getItem('correctionHistory');
@@ -167,6 +149,20 @@ const EssayCorrection = () => {
     if (savedApiKey) {
       setApiKey(savedApiKey);
     }
+
+    // 加载GitHub Gist配置
+    const savedGistToken = localStorage.getItem('gistToken');
+    const savedGistId = localStorage.getItem('gistId');
+    const savedSyncEnabled = localStorage.getItem('syncEnabled') === 'true';
+    
+    if (savedGistToken) setGistToken(savedGistToken);
+    if (savedGistId) setGistId(savedGistId);
+    if (savedSyncEnabled) setSyncEnabled(savedSyncEnabled);
+    
+    // 如果同步功能已启用，尝试从Gist加载数据
+    if (savedSyncEnabled && savedGistToken && savedGistId) {
+      loadDataFromGist(savedGistToken, savedGistId);
+    }
   }, []);
   
   // 当选择的班级变化时，更新学生列表
@@ -198,6 +194,11 @@ const EssayCorrection = () => {
     parseStudentList(currentList);
     
     showToast('学生名单已保存', 'success');
+    
+    // 同步到Gist
+    if (syncEnabled) {
+      syncDataToGist();
+    }
   };
   
   // 切换班级
@@ -245,6 +246,11 @@ const EssayCorrection = () => {
     const updatedHistory = [newEntry, ...history].slice(0, 200); // 保留最近200条记录
     setHistory(updatedHistory);
     localStorage.setItem('correctionHistory', JSON.stringify(updatedHistory));
+    
+    // 同步到Gist
+    if (syncEnabled) {
+      syncDataToGist();
+    }
   };
   
   // 处理图片上传
@@ -678,6 +684,174 @@ const EssayCorrection = () => {
     setPreviewImage(null);
   };
 
+  // 保存GitHub Gist配置
+  const saveGistConfig = () => {
+    if (!gistToken) {
+      showToast('请输入GitHub Token', 'error');
+      return;
+    }
+
+    if (!gistId) {
+      showToast('请输入Gist ID', 'error');
+      return;
+    }
+
+    localStorage.setItem('gistToken', gistToken);
+    localStorage.setItem('gistId', gistId);
+    localStorage.setItem('syncEnabled', 'true');
+    setSyncEnabled(true);
+    
+    showToast('同步配置已保存', 'success');
+    
+    // 首次同步数据到Gist
+    syncDataToGist();
+  };
+
+  // 禁用同步
+  const disableSync = () => {
+    localStorage.setItem('syncEnabled', 'false');
+    setSyncEnabled(false);
+    showToast('同步功能已禁用', 'info');
+  };
+
+  // 从Gist加载数据
+  const loadDataFromGist = async (token, id) => {
+    try {
+      setSyncLoading(true);
+      const response = await fetch(`https://api.github.com/gists/${id}`, {
+        headers: {
+          'Authorization': `token ${token}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`GitHub API错误 (${response.status})`);
+      }
+      
+      const data = await response.json();
+      const content = data.files['luna_writing_grader_data.json']?.content;
+      
+      if (content) {
+        const parsedData = JSON.parse(content);
+        
+        // 更新各项数据
+        if (parsedData.apiKey) {
+          setApiKey(parsedData.apiKey);
+          localStorage.setItem('siliconflowApiKey', parsedData.apiKey);
+        }
+        
+        if (parsedData.class18List) {
+          setClass18List(parsedData.class18List);
+          localStorage.setItem('class18List', parsedData.class18List);
+        }
+        
+        if (parsedData.class19List) {
+          setClass19List(parsedData.class19List);
+          localStorage.setItem('class19List', parsedData.class19List);
+        }
+        
+        if (parsedData.correctionHistory) {
+          setHistory(parsedData.correctionHistory);
+          localStorage.setItem('correctionHistory', JSON.stringify(parsedData.correctionHistory));
+        }
+        
+        showToast('数据已成功从云端同步', 'success');
+      }
+    } catch (error) {
+      console.error('从Gist加载数据失败:', error);
+      showToast(`从云端同步数据失败: ${error.message}`, 'error');
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  // 同步数据到Gist
+  const syncDataToGist = async () => {
+    if (!syncEnabled || !gistToken || !gistId) {
+      return;
+    }
+    
+    try {
+      setSyncLoading(true);
+      
+      // 准备要同步的数据
+      const dataToSync = {
+        apiKey: apiKey || localStorage.getItem('siliconflowApiKey'),
+        class18List: class18List || localStorage.getItem('class18List'),
+        class19List: class19List || localStorage.getItem('class19List'),
+        correctionHistory: history.length > 0 ? history : JSON.parse(localStorage.getItem('correctionHistory') || '[]')
+      };
+      
+      // 更新Gist
+      const response = await fetch(`https://api.github.com/gists/${gistId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `token ${gistToken}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          files: {
+            'luna_writing_grader_data.json': {
+              content: JSON.stringify(dataToSync, null, 2)
+            }
+          }
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`GitHub API错误 (${response.status})`);
+      }
+      
+      showToast('数据已成功同步到云端', 'success');
+    } catch (error) {
+      console.error('同步数据到Gist失败:', error);
+      showToast(`同步数据到云端失败: ${error.message}`, 'error');
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  // 保存API密钥
+  const handleSaveApiKey = async () => {
+    if (!apiKey) {
+      showToast('请输入API密钥', 'error');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const isValid = await validateApiKey(apiKey);
+      
+      if (isValid) {
+        localStorage.setItem('siliconflowApiKey', apiKey);
+        showToast('API密钥验证成功并已保存', 'success');
+        
+        // 同步到Gist
+        if (syncEnabled) {
+          syncDataToGist();
+        }
+      } else {
+        showToast('API密钥验证失败，请检查密钥是否正确', 'error');
+      }
+    } catch (error) {
+      showToast('API密钥验证失败，请检查网络连接', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 手动同步数据
+  const manualSync = async () => {
+    try {
+      await loadDataFromGist(gistToken, gistId);
+      await syncDataToGist();
+    } catch (error) {
+      showToast(`同步失败: ${error.message}`, 'error');
+    }
+  };
+
   return (
     <div className="container mx-auto p-4 max-w-6xl">
       <div className="flex items-center justify-center mb-8">
@@ -967,6 +1141,94 @@ const EssayCorrection = () => {
                   <AlertTitle className="text-blue-800">关于API密钥</AlertTitle>
                   <AlertDescription className="text-blue-700">
                     API密钥用于连接SiliconFlow服务，访问deepseek-ai/DeepSeek-R1模型进行作文批改。密钥仅保存在您的浏览器中，不会发送至其他服务器。
+                  </AlertDescription>
+                </Alert>
+                
+                <div className="mt-6 border-t pt-6">
+                  <h3 className="font-medium text-lg mb-4">数据同步设置</h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    通过GitHub Gist服务在多台设备间同步您的设置和批改结果。
+                    {syncEnabled && <span className="ml-2 text-green-600 font-medium">✓ 已启用</span>}
+                  </p>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2" htmlFor="gistToken">
+                        GitHub Token
+                      </label>
+                      <Input
+                        id="gistToken"
+                        type="password"
+                        value={gistToken}
+                        onChange={(e) => setGistToken(e.target.value)}
+                        placeholder="输入GitHub个人访问令牌"
+                        className="w-full"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">创建GitHub令牌</a>
+                        （需要gist权限）
+                      </p>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium mb-2" htmlFor="gistId">
+                        Gist ID
+                      </label>
+                      <Input
+                        id="gistId"
+                        value={gistId}
+                        onChange={(e) => setGistId(e.target.value)}
+                        placeholder="输入您创建的Gist ID"
+                        className="w-full"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        <a href="https://gist.github.com/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">创建新的Gist</a>
+                        并复制网址中的ID部分
+                      </p>
+                    </div>
+                    
+                    <div className="flex gap-3">
+                      {syncEnabled ? (
+                        <>
+                          <Button 
+                            onClick={manualSync} 
+                            disabled={syncLoading}
+                            className="flex-1"
+                          >
+                            {syncLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            立即同步
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            onClick={disableSync}
+                            className="flex-1"
+                          >
+                            禁用同步
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          onClick={saveGistConfig}
+                          className="w-full"
+                          disabled={!gistToken || !gistId || syncLoading}
+                        >
+                          {syncLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                          启用数据同步
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                
+                <Alert className="bg-yellow-50 border-yellow-200 mb-2">
+                  <AlertTitle className="text-yellow-800">如何设置数据同步</AlertTitle>
+                  <AlertDescription className="text-yellow-700 text-sm">
+                    <ol className="list-decimal pl-4 space-y-1">
+                      <li>访问 <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">GitHub</a> 创建个人访问令牌（勾选gist权限）</li>
+                      <li>访问 <a href="https://gist.github.com/" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">Gist</a> 创建一个新的私密Gist</li>
+                      <li>从Gist的网址中复制ID（如 https://gist.github.com/username/<b>abcd1234</b>）</li>
+                      <li>填入上方表单并启用同步</li>
+                    </ol>
                   </AlertDescription>
                 </Alert>
                 
